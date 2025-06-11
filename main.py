@@ -1,13 +1,12 @@
 import logging
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.types import Message
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.enums import ParseMode
-from aiogram import F
 
 API_TOKEN = "7999512901:AAGg3X5JRAWzDm9GqkvnVR7ur14HVsKYYrc"
 
@@ -48,24 +47,32 @@ def main_menu():
 async def start(message: Message):
     await message.answer(f"Привет, {message.from_user.first_name}! 👋\nЯ помогу рассчитать геотекстиль (дорнит).", reply_markup=main_menu())
 
-# Команда "Сделать расчёт"
 @dp.message(F.text == "🔢 Сделать расчёт")
 async def start_calc(message: Message, state: FSMContext):
     await state.set_state(CalcState.waiting_for_length)
-    await message.answer("Введите длину участка в метрах:")
+    await message.answer(
+        "Введите длину участка в метрах:\n\n"
+        "Или выберите подходящую плотность в разделе «📝 Квиз», чтобы получить рекомендацию.",
+        reply_markup=main_menu()
+    )
 
 @dp.message(CalcState.waiting_for_length)
 async def process_length(message: Message, state: FSMContext):
     try:
         length = float(message.text.replace(",", "."))
         await state.update_data(length=length)
+
         # Плотности
         builder = ReplyKeyboardBuilder()
         for d in DENSITY_PRICES.keys():
             builder.button(text=str(d))
         builder.adjust(3)
         await state.set_state(CalcState.waiting_for_density)
-        await message.answer("Выберите плотность геотекстиля (г/м²):", reply_markup=builder.as_markup(resize_keyboard=True))
+        await message.answer(
+            "Выберите плотность геотекстиля (г/м²):\n"
+            "или воспользуйтесь квизом «📝 Квиз» для подсказки.",
+            reply_markup=builder.as_markup(resize_keyboard=True)
+        )
     except ValueError:
         await message.answer("Пожалуйста, введите корректное число длины участка в метрах.")
 
@@ -77,7 +84,7 @@ async def process_density(message: Message, state: FSMContext):
             raise ValueError
         data = await state.get_data()
         length = data['length']
-        width = 2  # фиксированная
+        width = 2  # фиксированная ширина
         area = length * width
 
         if area < 100:
@@ -101,19 +108,16 @@ async def process_density(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("Пожалуйста, выберите плотность из списка.")
 
-# Мои расчёты (заглушка)
 @dp.message(F.text == "💾 Мои расчёты")
 async def my_calcs(message: Message):
     await message.answer("История расчётов пока не сохраняется. Скоро будет!")
 
-# Кнопка «Новый расчёт»
 @dp.message(F.text == "🔁 Новый расчёт")
 async def new_calc(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Начнём новый расчёт. Введите длину участка в метрах:")
     await state.set_state(CalcState.waiting_for_length)
 
-# Советы и лайфхаки
 @dp.message(F.text == "💡 Советы и лайфхаки")
 async def tips(message: Message):
     await message.answer("💡 Лайфхаки по геотекстилю:\n\n"
@@ -121,7 +125,6 @@ async def tips(message: Message):
                          "▪ Укладывайте на утрамбованное основание\n"
                          "▪ Делайте нахлёст 10–20 см")
 
-# Материалы
 @dp.message(F.text == "📦 Материалы")
 async def materials(message: Message):
     await message.answer(
@@ -133,7 +136,6 @@ async def materials(message: Message):
         "▪ <b>Георешётка:</b> объёмное армирование"
     )
 
-# Квиз
 @dp.message(F.text == "📝 Квиз")
 async def quiz(message: Message):
     builder = ReplyKeyboardBuilder()
@@ -155,12 +157,11 @@ async def quiz_answer(message: Message):
     recommended = mapping.get(message.text)
     await message.answer(f"✅ Рекомендуем плотность: <b>{recommended} г/м²</b>", reply_markup=main_menu())
 
-# Обработка непонятных команд
 @dp.message()
 async def handle_other(message: Message, state: FSMContext):
     current = await state.get_state()
     if current in [CalcState.waiting_for_length, CalcState.waiting_for_density]:
-        return  # Не мешаем, бот ждёт число или выбор
+        return
     await message.answer("Не понимаю команду. Пожалуйста, выбери пункт меню.", reply_markup=main_menu())
 
 # Запуск
