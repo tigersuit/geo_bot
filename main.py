@@ -124,7 +124,7 @@ async def process_density(message: Message, state: FSMContext):
 
         if area < 100:
             area *= 1.2
-            reserve_text = "\n🔄 Добавлен запас 20% (участок < 100 м²)."
+            reserve_text = "\n🔄 <i>Добавлен запас 20% (участок &lt; 100 м²)</i>"
 
         total_price = round(area * price_per_m2, 2)
 
