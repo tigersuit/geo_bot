@@ -103,7 +103,8 @@ async def process_width(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("Ошибка: ширина должна быть положительным числом. Попробуйте ещё раз.", reply_markup=cancel_back_kb)
 
-@dp.message(CalcStates.waiting_for_density)async def process_density(message: types.Message, state: FSMContext):
+@dp.message(CalcStates.waiting_for_density)
+async def process_density(message: types.Message, state: FSMContext):
     text = message.text
     if text == "⬅️ Назад":
         await message.answer("Введите ширину участка в метрах (например, 5):", reply_markup=cancel_back_kb)
