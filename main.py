@@ -45,8 +45,15 @@ def main_menu():
 
 @dp.message(F.text == "/start")
 async def start(message: Message):
-    await message.answer(f"Привет, {message.from_user.first_name}! 👋\nЯ помогу рассчитать геотекстиль (дорнит).", reply_markup=main_menu())
-
+    await message.answer(
+        f"Привет, {message.from_user.first_name}! 👋\n"
+        f"Я бот для расчёта нужного количества геотекстиля (дорнита) под твои задачи.\n\n"
+        f"🔹 Узнай, какая плотность подойдёт для парковки, отмостки или дорожки.\n"
+        f"🔹 Быстро рассчитай стоимость и площадь.\n"
+        f"🔹 Получи советы и рекомендации.\n\n"
+        f"Выбери нужный пункт меню ниже 👇",
+        reply_markup=main_menu()
+    )
 @dp.message(F.text == "🔢 Сделать расчёт")
 async def start_calc(message: Message, state: FSMContext):
     await state.set_state(CalcState.waiting_for_length)
