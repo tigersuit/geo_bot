@@ -1,77 +1,115 @@
+import logging
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command, StateFilter
-from aiogram.filters.text import TextFilter
+from aiogram.filters import Command, StateFilter, Text
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.bot import DefaultBotProperties
-
-import logging
-import os
+from aiogram.client.session.aiohttp import AiohttpSession
 
 API_TOKEN = "7999512901:AAGg3X5JRAWzDm9GqkvnVR7ur14HVsKYYrc"
 
 logging.basicConfig(level=logging.INFO)
 
-bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"), session=AiohttpSession())
-dp = Dispatcher()
+# Цены за м2 по плотности
+PRICES = {
+    100: 50,
+    150: 55,
+    200: 60,
+    250: 65,
+    300: 70,
+}
 
-# Состояния
+WIDTH = 2  # фиксированная ширина
+
+# FSM состояния
 class CalcStates(StatesGroup):
     waiting_for_length = State()
     waiting_for_density = State()
-    quiz = State()
+    waiting_for_quiz_answer = State()
 
-# Фиксированные цены и плотности
-DENSITIES = {
-    "100": 50,
-    "150": 55,
-    "200": 60,
-    "250": 65,
-    "300": 70,
-}
-
-WIDTH_M = 2  # ширина всегда 2 метра
-
-# Главное меню
-def main_menu():
+# Главное меню клавиатура
+def main_menu_kb():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add(
         KeyboardButton("🔢 Сделать расчёт"),
-        KeyboardButton("💾 Мои расчёты")
+        KeyboardButton("💾 Мои расчёты"),
     )
     kb.add(
         KeyboardButton("💡 Советы и лайфхаки"),
-        KeyboardButton("📦 Материалы")
+        KeyboardButton("📦 Материалы"),
     )
     kb.add(
+        KeyboardButton("🔁 Новый расчёт"),
         KeyboardButton("📝 Квиз"),
-        KeyboardButton("🔁 Новый расчёт")
     )
     return kb
 
-# Старт
+# Клавиатура выбора плотности
+def density_kb():
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    for density in PRICES.keys():
+        kb.add(KeyboardButton(str(density)))
+    return kb
+
+# Клавиатура для квиза
+QUIZ_OPTIONS = {
+    "Парковка": 300,
+    "Дорожка": 150,
+    "Отмостка": 200,
+    "Дренаж": 250,
+    "Газон": 100,
+}
+
+def quiz_kb():
+    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    for option in QUIZ_OPTIONS.keys():
+        kb.add(KeyboardButton(option))
+    return kb
+
+# Советы и лайфхаки
+ADVICES_TEXT = (
+    "💡 Советы и лайфхаки по работе с геотекстилем:\n"
+    "- Добавляйте запас 20% при площади меньше 100 м².\n"
+    "- Используйте плотность в зависимости от назначения.\n"
+    "- При укладке ровняйте поверхность и убирайте мусор.\n"
+    "- Закрепляйте материал, чтобы он не смещался."
+)
+
+# Материалы
+MATERIALS_TEXT = (
+    "📦 Материалы:\n"
+    "• Геотекстиль – прочный нетканый материал для фильтрации и разделения слоёв.\n"
+    "• Геосетка – армирующая сетка для укрепления грунтов.\n"
+    "• Биоматы – натуральные волокна для защиты почвы от эрозии.\n"
+    "• Спанбонд – легкий укрывной материал для защиты растений.\n"
+    "• Георешетка – объемная конструкция для стабилизации грунтов."
+)
+
+# Инициализация бота и диспетчера
+bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"), session=AiohttpSession())
+dp = Dispatcher()
+
+# Хранилище расчетов по пользователям (простейшее в памяти)
+user_calculations = {}
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        f"Привет, {message.from_user.first_name}! 🛠\n"
-        "Я помогу рассчитать количество и стоимость геотекстиля.\n\n"
-        "Выбери действие в меню ниже.",
-        reply_markup=main_menu()
+        f"Привет, {message.from_user.first_name}! Я бот-калькулятор для геотекстиля.\n"
+        "Выберите действие в меню ниже.",
+        reply_markup=main_menu_kb()
     )
 
-# Начало расчёта (старт или новый расчёт)
-@dp.message(TextFilter(text=["🔢 Сделать расчёт", "🔁 Новый расчёт"]))
+@dp.message(Text("🔢 Сделать расчёт"))
 async def start_calc(message: types.Message, state: FSMContext):
     await state.set_state(CalcStates.waiting_for_length)
     await message.answer(
-        "Введите длину участка в метрах (ширина фиксирована 2 метра):",
+        "Пожалуйста, введите длину участка в метрах (ширина всегда 2 метра):",
         reply_markup=ReplyKeyboardRemove()
     )
 
-# Обработка длины участка
 @dp.message(StateFilter(CalcStates.waiting_for_length))
 async def process_length(message: types.Message, state: FSMContext):
     try:
@@ -81,150 +119,115 @@ async def process_length(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("Пожалуйста, введите корректное положительное число длины участка в метрах.")
         return
-
-    # Сохраняем длину в состоянии
     await state.update_data(length=length)
-
-    # Предлагаем выбрать плотность
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    for density in DENSITIES.keys():
-        kb.add(KeyboardButton(density))
-
     await state.set_state(CalcStates.waiting_for_density)
-    await message.answer(
-        "Выберите плотность геотекстиля (г/м²):",
-        reply_markup=kb
-    )
+    await message.answer("Выберите плотность геотекстиля:", reply_markup=density_kb())
 
-# Обработка выбора плотности и расчет
 @dp.message(StateFilter(CalcStates.waiting_for_density))
 async def process_density(message: types.Message, state: FSMContext):
-    density = message.text.strip()
-    if density not in DENSITIES:
-        await message.answer("Пожалуйста, выберите плотность из предложенного списка.")
+    try:
+        density = int(message.text)
+        if density not in PRICES:
+            raise ValueError()
+    except ValueError:
+        await message.answer("Пожалуйста, выберите плотность из списка кнопок.")
         return
-
     data = await state.get_data()
     length = data.get("length")
-    if not length:
-        await message.answer("Произошла ошибка, попробуйте начать расчет заново.")
-        await state.clear()
-        return
 
-    price_per_m2 = DENSITIES[density]
-
-    # Расчет площади с запасом +20% если меньше 100 м²
-    area = WIDTH_M * length
+    area = WIDTH * length
     if area < 100:
-        area *= 1.2  # +20% запас
+        area_with_buffer = area * 1.2
+    else:
+        area_with_buffer = area
 
-    area = round(area, 2)
-    total_price = round(area * price_per_m2, 2)
+    price_per_m2 = PRICES[density]
+    total_cost = round(area_with_buffer * price_per_m2, 2)
+    area_with_buffer = round(area_with_buffer, 2)
 
-    result = (
-        f"Расчёт для участка {length} м × {WIDTH_M} м\n"
-        f"Площадь с запасом: {area} м²\n"
+    # Сохраняем расчет
+    user_id = message.from_user.id
+    user_calculations.setdefault(user_id, [])
+    user_calculations[user_id].append({
+        "length": length,
+        "width": WIDTH,
+        "density": density,
+        "area": area_with_buffer,
+        "price_per_m2": price_per_m2,
+        "total_cost": total_cost
+    })
+
+    await message.answer(
+        f"Результат расчёта:\n"
+        f"Длина: {length} м\n"
+        f"Ширина: {WIDTH} м (фиксированная)\n"
+        f"Площадь с запасом: {area_with_buffer} м²\n"
         f"Плотность: {density} г/м²\n"
-        f"Цена за м²: {price_per_m2} ₽\n\n"
-        f"<b>Итоговая стоимость:</b> {total_price} ₽"
+        f"Цена за м²: {price_per_m2} ₽\n"
+        f"Итоговая стоимость: {total_cost} ₽",
+        reply_markup=main_menu_kb()
     )
-
-    # Сохраняем расчёт в состоянии (можно расширить для сохранения в базу)
-    user_data = await state.get_data()
-    calc_history = user_data.get("calc_history", [])
-    calc_history.append(result)
-    await state.update_data(calc_history=calc_history)
-
-    await message.answer(result, reply_markup=main_menu())
     await state.clear()
 
-# Показать мои расчёты
-@dp.message(TextFilter(text="💾 Мои расчёты"))
-async def show_calcs(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    calc_history = data.get("calc_history", [])
-    if not calc_history:
-        await message.answer("У вас пока нет сохранённых расчётов.", reply_markup=main_menu())
+@dp.message(Text("💾 Мои расчёты"))
+async def show_calculations(message: types.Message):
+    user_id = message.from_user.id
+    calcs = user_calculations.get(user_id)
+    if not calcs:
+        await message.answer("У вас пока нет сохранённых расчётов.", reply_markup=main_menu_kb())
         return
+    text = "Ваши расчёты:\n\n"
+    for i, calc in enumerate(calcs, 1):
+        text += (
+            f"{i}. Длина: {calc['length']} м, "
+            f"Ширина: {calc['width']} м, "
+            f"Плотность: {calc['density']} г/м², "
+            f"Площадь с запасом: {calc['area']} м², "
+            f"Цена за м²: {calc['price_per_m2']} ₽, "
+            f"Итоговая стоимость: {calc['total_cost']} ₽\n"
+        )
+    await message.answer(text, reply_markup=main_menu_kb())
 
-    text = "<b>Ваши расчёты:</b>\n\n" + "\n\n".join(calc_history)
-    await message.answer(text, reply_markup=main_menu())
+@dp.message(Text("💡 Советы и лайфхаки"))
+async def show_advices(message: types.Message):
+    await message.answer(ADVICES_TEXT, reply_markup=main_menu_kb())
 
-# Советы и лайфхаки
-@dp.message(TextFilter(text="💡 Советы и лайфхаки"))
-async def tips_and_hacks(message: types.Message):
-    text = (
-        "<b>Советы по применению геотекстиля:</b>\n"
-        "- Для дренажа используйте плотность от 150 г/м²\n"
-        "- Для дорожек и парковок — от 200 г/м²\n"
-        "- Добавляйте запас материала +20% при расчётах менее 100 м²\n"
-        "- Учитывайте ровность поверхности при укладке\n"
-        "- Материал устойчив к гниению и ультрафиолету\n"
-        "..."
-    )
-    await message.answer(text, reply_markup=main_menu())
+@dp.message(Text("📦 Материалы"))
+async def show_materials(message: types.Message):
+    await message.answer(MATERIALS_TEXT, reply_markup=main_menu_kb())
 
-# Информация о материалах
-@dp.message(TextFilter(text="📦 Материалы"))
-async def materials_info(message: types.Message):
-    text = (
-        "<b>Материалы:</b>\n\n"
-        "<b>Геотекстиль:</b> термоскреплённое полотно, применяется для разделения, фильтрации и дренажа.\n\n"
-        "<b>Геосетка:</b> армирующий материал для укрепления грунта.\n\n"
-        "<b>Биоматы:</b> используются для защиты склонов и озеленения.\n\n"
-        "<b>Спанбонд:</b> нетканый материал для временной защиты растений и грунта.\n\n"
-        "<b>Объемная георешетка:</b> для укрепления склонов и создания дренажных систем."
-    )
-    await message.answer(text, reply_markup=main_menu())
+@dp.message(Text("🔁 Новый расчёт"))
+async def new_calc(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Начинаем новый расчёт. Введите длину участка в метрах:", reply_markup=ReplyKeyboardRemove())
+    await state.set_state(CalcStates.waiting_for_length)
 
-# Квиз (пример простой реализации)
-QUIZ_QUESTIONS = [
-    {
-        "question": "Зачем нужен геотекстиль?",
-        "options": [
-            "Для дренажа",
-            "Для укрепления грунта",
-            "Для декоративного покрытия",
-            "Для утепления"
-        ],
-        "correct": 0,  # индекс правильного ответа
-        "recommend": {
-            0: "Рекомендуется плотность 150 г/м²",
-            1: "Рекомендуется плотность 200 г/м²",
-            2: "Геотекстиль не подходит для декоративных целей",
-            3: "Геотекстиль не используется как утеплитель"
-        }
-    }
-]
+# Квиз
 
-@dp.message(TextFilter(text="📝 Квиз"))
+@dp.message(Text("📝 Квиз"))
 async def start_quiz(message: types.Message, state: FSMContext):
-    await state.update_data(quiz_step=0)
-    question = QUIZ_QUESTIONS[0]["question"]
-    options = QUIZ_QUESTIONS[0]["options"]
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    for opt in options:
-        kb.add(KeyboardButton(opt))
-    await state.set_state(CalcStates.quiz)
-    await message.answer(f"<b>Вопрос:</b> {question}", reply_markup=kb)
+    await state.set_state(CalcStates.waiting_for_quiz_answer)
+    await message.answer("Для чего вам нужен геотекстиль? Выберите вариант:", reply_markup=quiz_kb())
 
-@dp.message(StateFilter(CalcStates.quiz))
-async def quiz_answer(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    step = data.get("quiz_step", 0)
-    user_answer = message.text.strip()
-    question_data = QUIZ_QUESTIONS[step]
-
-    if user_answer not in question_data["options"]:
-        await message.answer("Пожалуйста, выберите вариант из списка.")
+@dp.message(StateFilter(CalcStates.waiting_for_quiz_answer))
+async def process_quiz_answer(message: types.Message, state: FSMContext):
+    choice = message.text
+    density = QUIZ_OPTIONS.get(choice)
+    if density is None:
+        await message.answer("Пожалуйста, выберите вариант из кнопок.")
         return
-
-    idx = question_data["options"].index(user_answer)
-    recommendation = question_data["recommend"].get(idx, "Нет рекомендации для этого варианта.")
-
-    await message.answer(f"Рекомендация: {recommendation}", reply_markup=main_menu())
+    await message.answer(
+        f"Для {choice.lower()} рекомендуем плотность: {density} г/м².",
+        reply_markup=main_menu_kb()
+    )
     await state.clear()
 
+# Обработка неизвестных сообщений
+@dp.message()
+async def unknown_message(message: types.Message):
+    await message.answer("Пожалуйста, используйте меню ниже для взаимодействия с ботом.", reply_markup=main_menu_kb())
+
+# Запуск бота
 if __name__ == "__main__":
     import asyncio
     asyncio.run(dp.start_polling(bot))
