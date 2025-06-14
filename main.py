@@ -39,7 +39,8 @@ def main_menu():
     builder.button(text="📝 Квиз")
     builder.button(text="🔁 Новый расчёт")
     builder.button(text="💬 Задать вопрос")
-    builder.adjust(2, 2, 2)
+    builder.button(text="📲 Заказать бота")  # ← Новая кнопка
+    builder.adjust(2, 2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 @dp.message(F.text == "/start")
@@ -193,6 +194,13 @@ async def materials(message: Message):
 @dp.message(F.text == "📝 Квиз")
 async def quiz_shortcut(message: Message, state: FSMContext):
     await start_quiz(message, state)
+    
+@dp.message(F.text == "📲 Заказать бота")
+async def order_bot(message: Message):
+    await message.answer(
+        "💼 Хочешь такого же бота под свой бизнес?\n"
+        "Напиши мне прямо сейчас: @sva_fashion — расскажу, как он может увеличить твои продажи 🚀"
+    )    
 
 @dp.message()
 async def unknown(message: Message, state: FSMContext):
